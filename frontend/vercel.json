@@ -1,6 +1,6 @@
 {
   "rewrites": [
-    { "source": "/api/:path*", "destination": "https://THAY-BANG-URL-RENDER.onrender.com/api/:path*" },
+    { "source": "/api/:path*", "destination": "https://thanks-quest-api.onrender.com/api/:path*" },
     { "source": "/(.*)", "destination": "/index.html" }
   ]
 }
