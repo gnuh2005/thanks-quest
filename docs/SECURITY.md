@@ -1,0 +1,11 @@
+# Bảo mật
+- Mật khẩu băm bcrypt; access token ngắn hạn + refresh token xoay vòng, phát hiện tái sử dụng (thu hồi cả họ token); cookie HttpOnly.
+- Phiên khách: token ngẫu nhiên, chỉ lưu bản băm, TTL index trong MongoDB; giới hạn XP.
+- CSRF: `originGuard` kiểm tra Origin trên mọi request thay đổi dữ liệu; cookie SameSite=Lax (None chỉ khi `COOKIE_CROSS_SITE`).
+- helmet, CORS theo danh sách, giới hạn kích thước body, rate limit (chặt hơn cho auth/AI).
+- Xác thực dữ liệu đầu vào bằng Zod; Mongoose không nhận toán tử từ client; HTML người dùng luôn được React escape.
+- Không tin client: XP, cấp, vật phẩm, kết quả mini game, đáp án quiz/code/kho báu đều tính ở máy chủ; thao tác trạng thái nguyên tử.
+- Code Debugging **không bao giờ thực thi** mã người dùng; chấm bằng quy tắc khai báo sau khi loại bỏ comment.
+- Khóa AI chỉ ở backend; prompt coi dữ liệu người dùng là dữ liệu, cấm bịa kỷ niệm; kết quả AI phải được người dùng xác nhận trước khi đăng; mọi bài đăng qua kiểm duyệt.
+- Không có tài khoản Admin mặc định; Admin tạo bằng script với mật khẩu ≥ 12 ký tự.
+- Production bắt buộc đặt secrets; không có secrets trong repo (`.env` bị ignore).

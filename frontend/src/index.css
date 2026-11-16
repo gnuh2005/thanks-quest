@@ -1,0 +1,32 @@
+@import "tailwindcss";
+
+@theme {
+  --color-navy: #101426;
+  --color-purple: #251b46;
+  --color-electric: #4f8cff;
+  --color-cyan: #36d6e8;
+  --color-gold: #f5c96a;
+  --color-paper: #f5f7fc;
+  --color-ink: #172033;
+  --font-sans: "Be Vietnam Pro", system-ui, sans-serif;
+  --font-pixel: "Press Start 2P", monospace;
+}
+
+html { scroll-behavior: smooth; }
+body {
+  margin: 0;
+  background: var(--color-paper);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+}
+:focus-visible { outline: 2px solid var(--color-electric); outline-offset: 2px; }
+
+.pixel-border {
+  box-shadow: 0 0 0 3px var(--color-navy), 0 0 0 5px var(--color-gold);
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
+}
+
+@keyframes fadeout { 0%, 70% { opacity: 1; } 100% { opacity: 0; } }
+@keyframes slidein { from { opacity: 0; transform: translateX(16px); } to { opacity: 1; transform: none; } }
