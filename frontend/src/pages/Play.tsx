@@ -9,6 +9,7 @@ import { CharacterSelect, HelpPanel, InventoryPanel, MapPanel, PauseMenu, QuestJ
 import { ReaderPanel, SignupModal, SummaryPanel } from '../components/game/Overlays'
 import { MiniGameHost } from '../components/minigames/MiniGameHost'
 import { GratitudeDesk, WallOverlay } from '../components/community/Gratitude'
+import { OrientationGuard } from '../components/ui/OrientationGuard'
 import { EventBus, type InteractPayload } from '../game/events/EventBus'
 import type { GameInit } from '../game/createGame'
 import { gameApi, guestApi, playerApi, type GuestSummary } from '../services/gameApi'
@@ -283,6 +284,9 @@ export default function Play() {
   const o = g.overlay
   return (
     <div className="fixed inset-0 overflow-hidden bg-navy font-sans" data-area={area ?? ''} data-testid="play-root">
+      {/* Chỉ nhắc xoay ngang khi đã vào cảnh game (sau khi chọn nhân vật xong) */}
+      <OrientationGuard enabled={!!init && !picker} />
+
       {init ? <GameCanvas init={init} /> : (
         <div className="grid h-full place-items-center text-white/70" role="status"><span className="flex items-center gap-2"><Loader2 className="animate-spin" size={18} /> Đang vào thế giới…</span></div>
       )}

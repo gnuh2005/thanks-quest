@@ -45,7 +45,11 @@ async function copyToClipboard(text: string): Promise<boolean> {
   }
 }
 
-export function OrientationGuard() {
+/**
+ * enabled = true  → chặn màn hình dọc + hiện mẹo (dùng khi đã vào cảnh game)
+ * enabled = false → không can thiệp (đăng nhập, chọn nhân vật, v.v.)
+ */
+export function OrientationGuard({ enabled = true }: { enabled?: boolean }) {
   const [portrait, setPortrait] = useState(false)
   const [touch, setTouch] = useState(false)
   const [fbBrowser, setFbBrowser] = useState(false)
@@ -74,7 +78,10 @@ export function OrientationGuard() {
 
   // Thông báo nhỏ khi vào game ở chế độ ngang (hiện 1 lần mỗi phiên)
   useEffect(() => {
-    if (!touch || portrait) return
+    if (!enabled || !touch || portrait) {
+      setTipOpen(false)
+      return
+    }
     let dismissed = false
     try {
       dismissed = sessionStorage.getItem(TIP_KEY) === '1'
@@ -95,7 +102,7 @@ export function OrientationGuard() {
       }, 12000)
       return () => clearTimeout(id)
     }
-  }, [touch, portrait, fbBrowser])
+  }, [enabled, touch, portrait, fbBrowser])
 
   const closeTip = () => {
     setTipOpen(false)
@@ -129,6 +136,9 @@ export function OrientationGuard() {
   }
 
   const ios = isIOSDevice()
+
+  // Chưa vào màn chơi → không can thiệp gì
+  if (!enabled) return null
 
   /* ───────── 1. Đang cầm dọc → chặn toàn màn hình, yêu cầu xoay ngang ───────── */
   if (touch && portrait) {
@@ -220,7 +230,7 @@ export function OrientationGuard() {
               <p className="text-xs leading-snug text-white/85">
                 {ios
                   ? 'Mẹo: bấm Chia sẻ → "Thêm vào Màn hình chính" để chơi toàn màn hình.'
-                  : 'Mẹo: bấm nút toàn màn hình trên thanh công cụ để chơi thoải mái hơn.'}
+                  : 'Mẹo: bấm nút ⛶ ở góc màn hình để chơi toàn màn hình.'}
               </p>
             )}
           </div>
