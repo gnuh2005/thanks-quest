@@ -1,178 +1,236 @@
 import { useEffect, useState } from 'react'
-import { ExternalLink, RotateCcw, Smartphone } from 'lucide-react'
+import { Check, ExternalLink, Maximize, RotateCcw, Smartphone, X } from 'lucide-react'
 
-// Phát hiện Facebook / Instagram / Zalo in-app browser
+const TIP_KEY = 'tq_mobile_tip_dismissed'
+
+// Facebook / Messenger / Instagram / Zalo / TikTok / Line... in-app browser
 function isSocialBrowser(): boolean {
   if (typeof navigator === 'undefined') return false
-  const ua = navigator.userAgent || ''
-  return /FBAN|FBAV|FB_IAB|Instagram|KAKAOTALK|MicroMessenger|Line\/|zalo/i.test(ua)
+  return /FBAN|FBAV|FB_IAB|FBIOS|Messenger|Instagram|Zalo|TikTok|musical_ly|Bytedance|Line\/|KAKAOTALK|MicroMessenger/i.test(navigator.userAgent || '')
 }
 
-function isMobile(): boolean {
-  if (typeof window === 'undefined') return false
-  return window.matchMedia('(pointer: coarse)').matches
+function isIOSDevice(): boolean {
+  return typeof navigator !== 'undefined' && /iPhone|iPad|iPod/.test(navigator.userAgent || '')
 }
 
+function isTouchDevice(): boolean {
+  return typeof window !== 'undefined' && window.matchMedia('(pointer: coarse)').matches
+}
+
+// Dựa vào kích thước viewport thực tế, chính xác hơn screen.orientation trong webview
 function isPortrait(): boolean {
-  if (typeof window === 'undefined') return false
-  // screen.orientation is more reliable but may not exist in all browsers
-  if (window.screen?.orientation?.type) {
-    return window.screen.orientation.type.startsWith('portrait')
-  }
-  return window.matchMedia('(orientation: portrait)').matches
+  return typeof window !== 'undefined' && window.innerHeight > window.innerWidth
 }
 
-/** Mở URL hiện tại trong trình duyệt ngoài */
-function openExternalBrowser() {
-  const url = window.location.href
-  const ua = navigator.userAgent || ''
-  const isIOS = /iPhone|iPad|iPod/.test(ua)
-  const isAndroid = /Android/.test(ua)
-
-  if (isIOS) {
-    // iOS: thử mở Safari bằng scheme đặc biệt
-    // Nếu thất bại, hướng dẫn copy link
-    const safariUrl = url.replace(/^https?:\/\//, 'x-safari-https://')
-    window.location.href = safariUrl
-    // Nếu không hoạt động sau 500ms, copy clipboard và hướng dẫn
-    setTimeout(() => {
-      if (document.hasFocus()) {
-        // Vẫn còn trong FB browser → copy link
-        try {
-          navigator.clipboard.writeText(url).then(() => {
-            alert('Đã sao chép link!\nMở Safari hoặc Chrome, dán link vào thanh địa chỉ để chơi.')
-          })
-        } catch {
-          alert(`Hãy sao chép link này và mở trong Safari:\n${url}`)
-        }
-      }
-    }, 600)
-  } else if (isAndroid) {
-    // Android: intent URL để mở Chrome
-    const intentUrl = `intent://${url.replace(/^https?:\/\//, '')}#Intent;scheme=https;package=com.android.chrome;end`
-    window.location.href = intentUrl
-    // Fallback: thử window.open
-    setTimeout(() => {
-      if (document.hasFocus()) {
-        window.open(url, '_blank', 'noopener')
-      }
-    }, 400)
-  } else {
-    window.open(url, '_blank', 'noopener')
-  }
-}
-
-function copyLink() {
-  const url = window.location.href
+async function copyToClipboard(text: string): Promise<boolean> {
   try {
-    navigator.clipboard.writeText(url).then(() => {
-      alert('Đã sao chép link! Dán vào Chrome hoặc Safari để chơi.')
-    }).catch(() => {
-      alert(`Sao chép link này:\n${url}`)
-    })
+    await navigator.clipboard.writeText(text)
+    return true
   } catch {
-    alert(`Sao chép link này:\n${url}`)
+    // Fallback cho webview không có Clipboard API
+    try {
+      const ta = document.createElement('textarea')
+      ta.value = text
+      ta.setAttribute('readonly', '')
+      ta.style.position = 'fixed'
+      ta.style.opacity = '0'
+      document.body.appendChild(ta)
+      ta.select()
+      const ok = document.execCommand('copy')
+      document.body.removeChild(ta)
+      return ok
+    } catch {
+      return false
+    }
   }
 }
 
 export function OrientationGuard() {
-  const [show, setShow] = useState(false)
+  const [portrait, setPortrait] = useState(false)
+  const [touch, setTouch] = useState(false)
   const [fbBrowser, setFbBrowser] = useState(false)
+  const [copied, setCopied] = useState(false)
+  const [copyFailed, setCopyFailed] = useState(false)
+  const [tipOpen, setTipOpen] = useState(false)
 
   useEffect(() => {
-    const fb = isSocialBrowser()
-    setFbBrowser(fb)
-
+    setFbBrowser(isSocialBrowser())
     const check = () => {
-      const mobile = isMobile()
-      const portrait = isPortrait()
-      // Hiện overlay nếu: mobile VÀ đang portrait
-      setShow(mobile && portrait)
+      setTouch(isTouchDevice())
+      setPortrait(isPortrait())
     }
-
     check()
 
-    // Lắng nghe thay đổi orientation
     const mq = window.matchMedia('(orientation: portrait)')
-    const handler = () => check()
-    mq.addEventListener('change', handler)
-
-    // Thêm screen.orientation listener nếu có
-    if (window.screen?.orientation) {
-      window.screen.orientation.addEventListener('change', handler)
-    }
-
-    window.addEventListener('resize', handler)
-
+    mq.addEventListener('change', check)
+    window.addEventListener('resize', check)
+    window.addEventListener('orientationchange', check)
     return () => {
-      mq.removeEventListener('change', handler)
-      window.screen?.orientation?.removeEventListener('change', handler)
-      window.removeEventListener('resize', handler)
+      mq.removeEventListener('change', check)
+      window.removeEventListener('resize', check)
+      window.removeEventListener('orientationchange', check)
     }
   }, [])
 
-  if (!show) return null
+  // Thông báo nhỏ khi vào game ở chế độ ngang (hiện 1 lần mỗi phiên)
+  useEffect(() => {
+    if (!touch || portrait) return
+    let dismissed = false
+    try {
+      dismissed = sessionStorage.getItem(TIP_KEY) === '1'
+    } catch {
+      /* bỏ qua */
+    }
+    if (dismissed) return
+    setTipOpen(true)
+    // Trình duyệt thường: tự ẩn sau 12 giây. Facebook/Zalo: giữ đến khi người chơi đóng.
+    if (!fbBrowser) {
+      const id = setTimeout(() => {
+        setTipOpen(false)
+        try {
+          sessionStorage.setItem(TIP_KEY, '1')
+        } catch {
+          /* bỏ qua */
+        }
+      }, 12000)
+      return () => clearTimeout(id)
+    }
+  }, [touch, portrait, fbBrowser])
 
-  return (
-    <div
-      className="fixed inset-0 z-[9999] flex flex-col items-center justify-center gap-5 bg-navy/97 p-6 text-center text-white"
-      role="dialog"
-      aria-modal="true"
-      aria-label="Yêu cầu xoay ngang màn hình"
-      style={{ backdropFilter: 'blur(8px)' }}
-    >
-      {/* Icon điện thoại xoay */}
-      <div className="relative flex h-20 w-20 items-center justify-center rounded-2xl border-2 border-gold/60 bg-gold/10">
-        <Smartphone size={40} className="text-gold animate-[spin_2s_ease-in-out_infinite_alternate]" />
-        <RotateCcw
-          size={22}
-          className="absolute -right-2 -top-2 text-cyan"
-          style={{ animation: 'spin 2s linear infinite' }}
-        />
-      </div>
+  const closeTip = () => {
+    setTipOpen(false)
+    try {
+      sessionStorage.setItem(TIP_KEY, '1')
+    } catch {
+      /* bỏ qua */
+    }
+  }
 
-      <div className="max-w-xs space-y-2">
-        <h2 className="text-xl font-extrabold tracking-wide text-gold">Xoay ngang điện thoại</h2>
-        <p className="text-sm leading-relaxed text-white/75">
-          THANKS QUEST cần chế độ <strong className="text-white">màn hình ngang</strong> để hiển thị đúng.
-          Hãy xoay điện thoại sang ngang để tiếp tục chơi.
-        </p>
-      </div>
+  const handleCopy = async () => {
+    const ok = await copyToClipboard(window.location.href)
+    setCopied(ok)
+    setCopyFailed(!ok)
+    if (ok) setTimeout(() => setCopied(false), 3000)
+  }
 
-      {/* Hiển thị thêm nếu đang dùng Facebook/Zalo browser */}
-      {fbBrowser && (
-        <div className="w-full max-w-xs rounded-2xl border border-amber-400/40 bg-amber-900/40 p-4 space-y-3">
-          <p className="text-xs font-bold uppercase tracking-widest text-amber-300">
-            ⚠️ Trình duyệt trong ứng dụng
-          </p>
-          <p className="text-sm text-white/80 leading-relaxed">
-            Facebook / Zalo chặn chế độ màn hình ngang.
-            Hãy mở link này trong <strong className="text-white">Chrome</strong> hoặc <strong className="text-white">Safari</strong> để chơi đầy đủ.
-          </p>
-          <div className="flex flex-col gap-2">
-            <button
-              onClick={openExternalBrowser}
-              className="flex items-center justify-center gap-2 rounded-xl bg-gold px-4 py-2.5 text-sm font-bold text-navy shadow-lg active:scale-95"
-            >
-              <ExternalLink size={16} />
-              Mở trong trình duyệt ngoài
-            </button>
-            <button
-              onClick={copyLink}
-              className="rounded-xl border border-white/20 px-4 py-2 text-sm text-white/70 active:scale-95"
-            >
-              Sao chép link
-            </button>
+  const handleOpenExternal = () => {
+    const ua = navigator.userAgent || ''
+    const { host, pathname, search } = window.location
+    if (/Android/.test(ua)) {
+      // Intent mở Chrome; nếu máy không có Chrome sẽ tự về fallback URL
+      const fallback = encodeURIComponent(window.location.href)
+      window.location.href = `intent://${host}${pathname}${search}#Intent;scheme=https;package=com.android.chrome;S.browser_fallback_url=${fallback};end`
+    } else if (isIOSDevice()) {
+      // iOS không có cách mở Safari ổn định từ in-app browser → sao chép link + hướng dẫn
+      void handleCopy()
+    } else {
+      window.open(window.location.href, '_blank', 'noopener')
+    }
+  }
+
+  const ios = isIOSDevice()
+
+  /* ───────── 1. Đang cầm dọc → chặn toàn màn hình, yêu cầu xoay ngang ───────── */
+  if (touch && portrait) {
+    return (
+      <div
+        className="fixed inset-0 z-9999 overflow-y-auto bg-navy/97 text-white"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Yêu cầu xoay ngang màn hình"
+        style={{ backdropFilter: 'blur(8px)' }}
+      >
+        <div className="flex min-h-full flex-col items-center justify-center gap-5 p-6 text-center">
+          <div className="relative flex h-20 w-20 items-center justify-center rounded-2xl border-2 border-gold/60 bg-gold/10">
+            <Smartphone size={40} className="animate-[spin_2s_ease-in-out_infinite_alternate] text-gold" />
+            <RotateCcw size={22} className="absolute -right-2 -top-2 animate-spin text-cyan" />
           </div>
-        </div>
-      )}
 
-      {/* Nếu không phải FB browser nhưng vẫn portrait, chỉ hiện hướng dẫn xoay */}
-      {!fbBrowser && (
-        <p className="text-xs text-white/40">
-          Nếu màn hình không tự xoay, hãy tắt khóa xoay trong cài đặt điện thoại.
-        </p>
-      )}
-    </div>
-  )
+          <div className="max-w-xs space-y-2">
+            <h2 className="text-xl font-extrabold tracking-wide text-gold">Xoay ngang điện thoại</h2>
+            <p className="text-sm leading-relaxed text-white/75">
+              THANKS QUEST cần <strong className="text-white">màn hình ngang</strong> để hiển thị đúng. Hãy xoay điện thoại sang ngang để tiếp tục chơi.
+            </p>
+          </div>
+
+          {fbBrowser ? (
+            <div className="w-full max-w-xs space-y-3 rounded-2xl border border-amber-400/40 bg-amber-900/40 p-4">
+              <p className="text-xs font-bold uppercase tracking-widest text-amber-300">⚠️ Trình duyệt trong ứng dụng</p>
+              <p className="text-sm leading-relaxed text-white/80">
+                Facebook / Zalo thường chặn xoay ngang. Hãy mở trang này bằng <strong className="text-white">Chrome</strong> hoặc <strong className="text-white">Safari</strong> để chơi đầy đủ.
+              </p>
+              <div className="flex flex-col gap-2">
+                {!ios && (
+                  <button onClick={handleOpenExternal} className="flex items-center justify-center gap-2 rounded-xl bg-gold px-4 py-2.5 text-sm font-bold text-navy shadow-lg active:scale-95">
+                    <ExternalLink size={16} aria-hidden /> Mở trong trình duyệt ngoài
+                  </button>
+                )}
+                <button
+                  onClick={handleCopy}
+                  className={`flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm active:scale-95 ${ios ? 'bg-gold font-bold text-navy' : 'border border-white/20 text-white/80'}`}
+                >
+                  {copied ? (
+                    <>
+                      <Check size={16} aria-hidden /> Đã sao chép link
+                    </>
+                  ) : (
+                    'Sao chép link'
+                  )}
+                </button>
+                {copyFailed && <p className="break-all text-xs text-amber-200">Không sao chép được. Hãy chép tay: {window.location.href}</p>}
+              </div>
+              <p className="text-xs leading-relaxed text-white/55">
+                {ios
+                  ? 'Sau khi sao chép, mở Safari/Chrome và dán link vào thanh địa chỉ. Hoặc bấm nút ⋯ ở góc rồi chọn "Mở trong Safari".'
+                  : 'Nếu nút không hoạt động, bấm nút ⋯ ở góc trên rồi chọn "Mở bằng trình duyệt".'}
+              </p>
+            </div>
+          ) : (
+            <p className="text-xs text-white/40">Nếu màn hình không tự xoay, hãy tắt khóa xoay trong cài đặt điện thoại.</p>
+          )}
+        </div>
+      </div>
+    )
+  }
+
+  /* ───────── 2. Đã xoay ngang → thông báo nhỏ ở đáy màn hình ───────── */
+  if (touch && tipOpen) {
+    return (
+      <div className="pointer-events-none fixed inset-x-0 bottom-2 z-70 flex justify-center px-28">
+        <div className="pointer-events-auto flex w-full max-w-md items-start gap-2 rounded-xl border border-gold/50 bg-navy/90 p-2.5 text-white shadow-xl backdrop-blur" role="status">
+          {fbBrowser ? <ExternalLink size={16} className="mt-0.5 shrink-0 text-gold" aria-hidden /> : <Maximize size={16} className="mt-0.5 shrink-0 text-gold" aria-hidden />}
+          <div className="min-w-0 flex-1">
+            {fbBrowser ? (
+              <>
+                <p className="text-xs leading-snug text-white/85">
+                  Bạn đang chơi trong Facebook/Zalo. Hãy mở bằng <strong className="text-white">Chrome</strong> hoặc <strong className="text-white">Safari</strong> để xoay ngang và toàn màn hình mượt hơn.
+                </p>
+                <div className="mt-1.5 flex flex-wrap gap-1.5">
+                  {!ios && (
+                    <button onClick={handleOpenExternal} className="inline-flex items-center gap-1 rounded-md bg-gold px-2 py-1 text-[11px] font-bold text-navy active:scale-95">
+                      Mở trình duyệt ngoài
+                    </button>
+                  )}
+                  <button onClick={handleCopy} className={`inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] active:scale-95 ${ios ? 'bg-gold font-bold text-navy' : 'border border-white/25 text-white/80'}`}>
+                    {copied ? 'Đã sao chép' : 'Sao chép link'}
+                  </button>
+                </div>
+              </>
+            ) : (
+              <p className="text-xs leading-snug text-white/85">
+                {ios
+                  ? 'Mẹo: bấm Chia sẻ → "Thêm vào Màn hình chính" để chơi toàn màn hình.'
+                  : 'Mẹo: bấm nút toàn màn hình trên thanh công cụ để chơi thoải mái hơn.'}
+              </p>
+            )}
+          </div>
+          <button onClick={closeTip} aria-label="Đóng thông báo" className="shrink-0 text-white/50 hover:text-white">
+            <X size={14} />
+          </button>
+        </div>
+      </div>
+    )
+  }
+
+  return null
 }

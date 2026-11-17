@@ -1,6 +1,6 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Award, Backpack, Clock, Home, LogOut, Map as MapIcon, Menu, Save, ScrollText, Sparkles, Trophy, UserPlus, Volume2, VolumeX, X } from 'lucide-react'
+import { Award, Backpack, Clock, Home, LogOut, Map as MapIcon, Maximize, Menu, Minimize, Save, ScrollText, Sparkles, Trophy, UserPlus, Volume2, VolumeX, X } from 'lucide-react'
 import { useGame } from '../../stores/game'
 import { Bar } from '../ui/Modal'
 import { previewDataUrl } from '../../game/systems/textures'
@@ -9,7 +9,53 @@ import { Minimap } from './Minimap'
 import { AudioManager } from '../../game/audio/AudioManager'
 import type { QuestView } from '../../types/api'
 import { vi } from '../../i18n'
-import { useEffect } from 'react'
+
+type FsDoc = Document & { webkitFullscreenElement?: Element | null; webkitExitFullscreen?: () => Promise<void> }
+type FsEl = HTMLElement & { webkitRequestFullscreen?: () => Promise<void> }
+type LockableOrientation = ScreenOrientation & { lock?: (o: string) => Promise<void>; unlock?: () => void }
+
+/** Toàn màn hình. iPhone (Safari/Chrome iOS) không hỗ trợ nên supported = false → nút tự ẩn. */
+function useFullscreen() {
+  const [isFull, setIsFull] = useState(false)
+  const supported =
+    typeof document !== 'undefined' && (!!document.documentElement.requestFullscreen || !!(document.documentElement as FsEl).webkitRequestFullscreen)
+
+  useEffect(() => {
+    const doc = document as FsDoc
+    const sync = () => setIsFull(!!(doc.fullscreenElement || doc.webkitFullscreenElement))
+    sync()
+    document.addEventListener('fullscreenchange', sync)
+    document.addEventListener('webkitfullscreenchange', sync)
+    return () => {
+      document.removeEventListener('fullscreenchange', sync)
+      document.removeEventListener('webkitfullscreenchange', sync)
+    }
+  }, [])
+
+  const toggle = async () => {
+    const doc = document as FsDoc
+    const root = document.documentElement as FsEl
+    const orientation = screen.orientation as LockableOrientation | undefined
+    try {
+      if (doc.fullscreenElement || doc.webkitFullscreenElement) {
+        await (doc.exitFullscreen?.() ?? doc.webkitExitFullscreen?.())
+        orientation?.unlock?.()
+      } else {
+        await (root.requestFullscreen?.() ?? root.webkitRequestFullscreen?.())
+        // Android Chrome: tự khóa xoay ngang khi vào toàn màn hình
+        try {
+          await orientation?.lock?.('landscape')
+        } catch {
+          /* trình duyệt không cho khóa → bỏ qua */
+        }
+      }
+    } catch {
+      /* bị chặn (webview, iframe...) → bỏ qua */
+    }
+  }
+
+  return { isFull, supported, toggle }
+}
 
 function useRemaining(expiresAt?: string): string | null {
   const [now, setNow] = useState(Date.now())
@@ -54,12 +100,18 @@ export function Hud({ onExitGuest }: { onExitGuest: () => void }) {
   const navigate = useNavigate()
   const touch = useIsTouch()
   const compact = useIsCompact()
+  const { isFull, supported: fsSupported, toggle: toggleFullscreen } = useFullscreen()
   const remaining = useRemaining(state?.guest?.expiresAt)
   // Panel khách: mặc định thu gọn trên điện thoại (cả dọc lẫn ngang)
   const [gOpen, setGOpen] = useState(
     () => !(typeof window !== 'undefined' && (window.matchMedia('(max-width: 640px)').matches || window.matchMedia('(pointer: coarse) and (max-height: 500px)').matches)),
   )
   const [audioMuted, setAudioMuted] = useState(() => AudioManager.getSettings().bgmMuted)
+
+  // Vào chế độ gọn (điện thoại ngang) → tự thu gọn panel khách để nhường chỗ cho minimap
+  useEffect(() => {
+    if (compact) setGOpen(false)
+  }, [compact])
 
   if (!state) return null
   const guest = state.kind === 'guest'
@@ -124,23 +176,28 @@ export function Hud({ onExitGuest }: { onExitGuest: () => void }) {
             </div>
           )}
 
-          {/* Minimap: chế độ gọn thì thu nhỏ (khung 96x96, scale 0.6 từ ~160px); desktop/tablet hiện đầy đủ */}
-          {compact ? (
-            <div className="h-24 w-24 overflow-hidden rounded-lg">
-              <div className="w-[160px] origin-top-left scale-[0.6]">
-                <Minimap />
-              </div>
-            </div>
-          ) : (
-            <div className="hidden sm:block">
-              <Minimap />
-            </div>
-          )}
+          {/* Minimap: chế độ gọn dùng kích thước nhỏ cố định; desktop/tablet hiện đầy đủ.
+              Cần Minimap.tsx có prop `compact` (xem hướng dẫn kèm theo). */}
+          {/* Giữ nguyên một vị trí trong cây React để Minimap không bị tạo lại khi đổi chế độ */}
+          <div className={compact ? 'block' : 'hidden sm:block'}>
+            <Minimap compact={compact} />
+          </div>
         </div>
 
         {/* ── Cột phải ── */}
         <div className="pointer-events-auto flex flex-col items-end gap-2">
           <div className="flex gap-1.5">
+            {fsSupported && (
+              <button
+                className={iconBtn}
+                aria-label={isFull ? 'Thoát toàn màn hình' : 'Toàn màn hình'}
+                title={isFull ? 'Thoát toàn màn hình' : 'Toàn màn hình'}
+                onClick={toggleFullscreen}
+                data-testid="btn-fullscreen"
+              >
+                {isFull ? <Minimize size={iconSize} /> : <Maximize size={iconSize} />}
+              </button>
+            )}
             <button
               className={iconBtn}
               aria-label={audioMuted ? 'Bật âm thanh' : 'Tắt âm thanh'}

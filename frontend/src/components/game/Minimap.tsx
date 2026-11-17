@@ -6,14 +6,19 @@ import { vi } from '../../i18n'
 
 const STORAGE_COLLAPSED_KEY = 'tq_minimap_collapsed'
 
-export function Minimap() {
+// Lưu dữ liệu mới nhất ở cấp module: nếu Minimap bị mount lại (đổi bố cục, xoay màn hình...)
+// thì vẫn có bản đồ ngay, không phải chờ game phát lại sự kiện 'minimap:map'.
+let lastMapData: MiniMapData | null = null
+let lastPos: MiniMapPos | null = null
+
+export function Minimap({ compact = false }: { compact?: boolean }) {
   const { openOverlay } = useGame()
   const blocking = useGame(selectBlocking)
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const terrainCanvasRef = useRef<HTMLCanvasElement | null>(null)
 
-  const [mapData, setMapData] = useState<MiniMapData | null>(null)
-  const [pos, setPos] = useState<MiniMapPos | null>(null)
+  const [mapData, setMapData] = useState<MiniMapData | null>(lastMapData)
+  const [pos, setPos] = useState<MiniMapPos | null>(lastPos)
   const [collapsed, setCollapsed] = useState<boolean>(() => {
     try {
       return localStorage.getItem(STORAGE_COLLAPSED_KEY) === 'true'
@@ -36,9 +41,11 @@ export function Minimap() {
   // Lắng nghe sự kiện từ EventBus
   useEffect(() => {
     const unsubMap = EventBus.on('minimap:map', (data) => {
+      lastMapData = data
       setMapData(data)
     })
     const unsubPos = EventBus.on('minimap:pos', (newPos) => {
+      lastPos = newPos
       setPos(newPos)
     })
     return () => {
@@ -219,18 +226,20 @@ export function Minimap() {
 
   return (
     <div
-      className="pointer-events-auto flex flex-col rounded-xl border border-white/15 bg-navy/85 shadow-lg backdrop-blur transition-all select-none w-28 sm:w-36 overflow-hidden"
+      className={`pointer-events-auto flex select-none flex-col overflow-hidden rounded-xl border border-white/15 bg-navy/85 shadow-lg backdrop-blur transition-all ${
+        compact ? 'w-28' : 'w-28 sm:w-36'
+      }`}
       data-testid="minimap-container"
     >
       {/* Tiêu đề Mini Map & Nút Thu Gọn */}
-      <div className="flex items-center justify-between border-b border-white/10 px-2 py-1 bg-navy/90 text-white">
+      <div className="flex items-center justify-between border-b border-white/10 bg-navy/90 px-2 py-1 text-white">
         <span className="flex items-center gap-1 truncate text-[11px] font-bold text-gold" title={areaName}>
           <MapPin size={11} className="shrink-0 text-cyan" />
           <span className="truncate">{areaName}</span>
         </span>
         <button
           onClick={toggleCollapsed}
-          className="text-white/60 hover:text-white p-0.5"
+          className="p-0.5 text-white/60 hover:text-white"
           aria-label={collapsed ? 'Mở rộng bản đồ nhỏ' : 'Thu gọn bản đồ nhỏ'}
           aria-expanded={!collapsed}
           data-testid="btn-minimap-toggle"
@@ -242,7 +251,7 @@ export function Minimap() {
       {/* Nội dung Canvas bản đồ nhỏ */}
       {!collapsed && (
         <div
-          className="relative cursor-pointer group bg-black/40"
+          className="group relative cursor-pointer bg-black/40"
           onClick={() => openOverlay('map')}
           title="Bấm để mở Bản đồ chi tiết (phím M)"
           role="button"
@@ -259,10 +268,10 @@ export function Minimap() {
             ref={canvasRef}
             width={144}
             height={96}
-            className="w-full h-auto block"
+            className="block h-auto w-full"
             aria-label={`Bản đồ nhỏ khu ${areaName}`}
           />
-          <div className="absolute inset-0 bg-cyan/0 group-hover:bg-cyan/10 transition-colors flex items-center justify-center opacity-0 group-hover:opacity-100">
+          <div className="absolute inset-0 flex items-center justify-center bg-cyan/0 opacity-0 transition-colors group-hover:bg-cyan/10 group-hover:opacity-100">
             <span className="rounded bg-navy/80 px-1.5 py-0.5 text-[9px] font-bold text-cyan shadow">Mở bản đồ (M)</span>
           </div>
         </div>
